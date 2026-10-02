@@ -1,1252 +1,439 @@
 """
-Streamlit Web Application for AI-Based Phishing Detection System
-Modern Professional UI with Advanced Visual Effects
+app.py
+======
+Streamlit Web Application for AI-Based Phishing Detection.
+Features:
+- State-of-the-Art BERT Transformer Phishing Email Analysis
+- Random Forest Machine Learning Baseline
+- Interactive Side-by-Side Model Comparison
+- URL Phishing Analyzer
+- Comparative Benchmark Metrics & Architecture Explanations
 """
 
+import os
+import sys
+import re
+from urllib.parse import urlparse
 import streamlit as st
+import joblib
 import pandas as pd
 import numpy as np
-import time
-import json
-from pathlib import Path
-from datetime import datetime
+from scipy.sparse import hstack, csr_matrix
 
-# Try to import plotly, but don't fail if not installed
-try:
-    import plotly.graph_objects as go
-    import plotly.express as px
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
-    st.warning("Plotly not installed. Some visualizations will be disabled. Run: pip install plotly")
+# Ensure UTF-8 output
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
-from config import UI_CONFIG, DETECTION_THRESHOLDS
-from detector import PhishingDetector, get_detector
-from feature_engineering import URLFeatureExtractor, EmailFeatureExtractor
-
-# Page configuration
+# Page Configuration
 st.set_page_config(
-    page_title="🛡️ AI Phishing Defender | Advanced Threat Detection",
+    page_title="AI Phishing Shield (BERT Powered)",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ==================== MODERN CUSTOM CSS ====================
+# Custom Styling
 st.markdown("""
 <style>
-    /* Import Google Fonts */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-    
-    * {
-        font-family: 'Inter', sans-serif;
+    .main-title {
+        font-size: 2.2rem;
+        font-weight: 700;
+        color: #1E3A8A;
+        margin-bottom: 0.2rem;
     }
-    
-    /* Glass morphism header */
-    .glass-header {
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(10px);
-        border-radius: 20px;
-        padding: 2rem;
-        margin-bottom: 2rem;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-        border: 1px solid rgba(255,255,255,0.2);
+    .sub-title {
+        font-size: 1.05rem;
+        color: #4B5563;
+        margin-bottom: 1.5rem;
     }
-    
-    /* Animated title */
-    .animated-title {
-        font-size: 3rem;
-        font-weight: 800;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        text-align: center;
-        animation: fadeInUp 0.8s ease-out;
-    }
-    
-    @keyframes fadeInUp {
-        from {
-            opacity: 0;
-            transform: translateY(30px);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-    
-    /* Metric cards */
     .metric-card {
-        background: white;
-        border-radius: 15px;
-        padding: 1.2rem;
-        margin: 0.5rem 0;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        transition: transform 0.3s, box-shadow 0.3s;
-        border-left: 4px solid;
-        text-align: center;
+        background-color: #F8FAFC;
+        border-radius: 10px;
+        padding: 15px;
+        border-left: 5px solid #3B82F6;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
-    
-    .metric-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-    }
-    
-    .metric-value {
-        font-size: 2rem;
-        font-weight: bold;
-        margin: 0.5rem 0;
-    }
-    
-    .metric-label {
-        font-size: 0.85rem;
-        color: #666;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    
-    /* Risk indicators */
-    .risk-high {
-        background: linear-gradient(135deg, #ff6b6b, #ee5a52);
-        color: white;
-        padding: 1rem;
-        border-radius: 12px;
-        margin: 1rem 0;
-        animation: pulse 2s infinite;
-    }
-    
-    .risk-medium {
-        background: linear-gradient(135deg, #ffa502, #ff7f50);
-        color: white;
-        padding: 1rem;
-        border-radius: 12px;
-        margin: 1rem 0;
-    }
-    
-    .risk-low {
-        background: linear-gradient(135deg, #1e90ff, #00bfff);
-        color: white;
-        padding: 1rem;
-        border-radius: 12px;
-        margin: 1rem 0;
-    }
-    
-    .risk-safe {
-        background: linear-gradient(135deg, #2ed573, #00b894);
-        color: white;
-        padding: 1rem;
-        border-radius: 12px;
-        margin: 1rem 0;
-    }
-    
-    @keyframes pulse {
-        0% { transform: scale(1); }
-        50% { transform: scale(1.02); }
-        100% { transform: scale(1); }
-    }
-    
-    /* Modern button styling */
-    .stButton > button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 12px;
-        padding: 0.6rem 1.5rem;
-        font-weight: 600;
-        transition: all 0.3s;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(102,126,234,0.4);
-    }
-    
-    /* Input fields */
-    .stTextInput > div > div > input, .stTextArea > div > div > textarea {
-        border-radius: 12px;
-        border: 2px solid #e0e0e0;
-        transition: all 0.3s;
-    }
-    
-    .stTextInput > div > div > input:focus, .stTextArea > div > div > textarea:focus {
-        border-color: #667eea;
-        box-shadow: 0 0 0 2px rgba(102,126,234,0.2);
-    }
-    
-    /* Expander styling */
-    .streamlit-expanderHeader {
-        background: white;
-        border-radius: 12px;
+    .alert-phish {
+        background-color: #FEE2E2;
+        border: 1px solid #EF4444;
+        color: #991B1B;
+        padding: 15px;
+        border-radius: 8px;
         font-weight: 600;
     }
-    
-    /* Progress bar */
-    .stProgress > div > div > div > div {
-        background: linear-gradient(90deg, #667eea, #764ba2);
-    }
-    
-    /* Badge styling */
-    .badge {
-        display: inline-block;
-        padding: 0.25rem 0.75rem;
-        border-radius: 20px;
-        font-size: 0.75rem;
+    .alert-safe {
+        background-color: #DCFCE7;
+        border: 1px solid #22C55E;
+        color: #166534;
+        padding: 15px;
+        border-radius: 8px;
         font-weight: 600;
-    }
-    
-    /* Feature bar */
-    .feature-bar {
-        height: 8px;
-        background: linear-gradient(90deg, #667eea, #764ba2);
-        border-radius: 4px;
-        margin: 0.5rem 0;
-        transition: width 0.5s;
     }
 </style>
 """, unsafe_allow_html=True)
 
 
-def initialize_detector():
-    """Initialize the phishing detector"""
-    if 'detector' not in st.session_state:
-        with st.spinner("🔄 Loading AI Models..."):
-            st.session_state.detector = get_detector()
-    return st.session_state.detector
+# Cache Model Loaders
+@st.cache_resource
+def load_bert_model():
+    from bert_classifier import get_bert_detector
+    return get_bert_detector()
+
+@st.cache_resource
+def load_baseline_models():
+    rf_email = joblib.load('models/rf_email.pkl') if os.path.exists('models/rf_email.pkl') else None
+    rf_url = joblib.load('models/rf_url.pkl') if os.path.exists('models/rf_url.pkl') else None
+    tfidf = joblib.load('models/tfidf_vectorizer.pkl') if os.path.exists('models/tfidf_vectorizer.pkl') else None
+    return rf_email, rf_url, tfidf
 
 
-def display_modern_risk_gauge(risk_score: float):
-    """Display an interactive risk gauge using Plotly"""
-    
-    if not PLOTLY_AVAILABLE:
-        # Fallback to simple progress bar
-        st.progress(risk_score)
-        return
-    
-    # Determine color and level
-    if risk_score >= DETECTION_THRESHOLDS['high_risk']:
-        color = "#ff4757"
-        level = "HIGH RISK"
-        icon = "🔴"
-    elif risk_score >= DETECTION_THRESHOLDS['medium_risk']:
-        color = "#ffa502"
-        level = "MEDIUM RISK"
-        icon = "🟠"
-    elif risk_score >= DETECTION_THRESHOLDS['low_risk']:
-        color = "#1e90ff"
-        level = "LOW RISK"
-        icon = "🟡"
-    else:
-        color = "#2ed573"
-        level = "SAFE"
-        icon = "🟢"
-    
-    # Create gauge chart
-    fig = go.Figure(go.Indicator(
-        mode = "gauge+number+delta",
-        value = risk_score * 100,
-        domain = {'x': [0, 1], 'y': [0, 1]},
-        title = {'text': "Risk Score", 'font': {'size': 24}},
-        delta = {'reference': 50, 'increasing': {'color': "red"}},
-        gauge = {
-            'axis': {'range': [None, 100], 'tickwidth': 1, 'tickcolor': "darkblue"},
-            'bar': {'color': color, 'thickness': 0.3},
-            'bgcolor': "white",
-            'borderwidth': 2,
-            'bordercolor': "gray",
-            'steps': [
-                {'range': [0, 30], 'color': '#e8f5e9'},
-                {'range': [30, 50], 'color': '#e3f2fd'},
-                {'range': [50, 80], 'color': '#fff3e0'},
-                {'range': [80, 100], 'color': '#ffebee'}
-            ],
-            'threshold': {
-                'line': {'color': "red", 'width': 4},
-                'thickness': 0.75,
-                'value': risk_score * 100
-            }
-        }
-    ))
-    
-    fig.update_layout(
-        height=300,
-        margin=dict(l=20, r=20, t=50, b=20),
-        paper_bgcolor='rgba(0,0,0,0)',
-        font={'color': color, 'family': "Inter"}
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Risk level display
-    level_color = {
-        "HIGH RISK": "#ff4757",
-        "MEDIUM RISK": "#ffa502", 
-        "LOW RISK": "#1e90ff",
-        "SAFE": "#2ed573"
-    }
-    
-    st.markdown(f"""
-    <div style="text-align: center; margin-top: -1rem;">
-        <div class="badge" style="background: {level_color[level]}; color: white;">
-            {icon} {level} {icon}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+def clean_text_for_tfidf(text):
+    text = str(text).lower()
+    text = re.sub(r'http\S+|www\S+', '', text)
+    text = re.sub(r'\S+@\S+', '', text)
+    text = re.sub(r'[^a-z\s]', '', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
 
 
-def display_modern_risk_factors(risk_factors: list):
-    """Display risk factors with modern styling"""
-    if not risk_factors:
-        st.info("✅ No significant risk factors detected")
-        return
-    
-    st.markdown("### 🔍 Detected Risk Factors")
-    
-    for i, factor in enumerate(risk_factors, 1):
-        severity = "HIGH" if any(word in factor.upper() for word in ["🚨", "CRITICAL"]) else "MEDIUM"
-        color = "#ff4757" if severity == "HIGH" else "#ffa502"
-        
-        st.markdown(f"""
-        <div style="background: white; padding: 0.8rem; border-radius: 10px; margin: 0.5rem 0; border-left: 4px solid {color};">
-            <span style="font-weight: 600;">{i}.</span> {factor}
-        </div>
-        """, unsafe_allow_html=True)
+def extract_email_features_rf(text, tfidf_vec):
+    clean = clean_text_for_tfidf(text)
+    tfidf_feat = tfidf_vec.transform([clean])
+    raw_text = str(text)
+
+    extra = np.array([[
+        len(raw_text.split()),
+        len(raw_text),
+        1 if 'http' in raw_text.lower() else 0,
+        len(re.findall(r'http\S+', raw_text)),
+        raw_text.count('!'),
+        sum(1 for c in raw_text if c.isupper()) / (len(raw_text) + 1),
+        1 if any(w in raw_text.lower() for w in ['urgent','verify','account','suspend','click','password','login','security','alert','bank']) else 0
+    ]])
+    return hstack([tfidf_feat, csr_matrix(extra)])
 
 
-def display_modern_recommendations(recommendations: list):
-    """Display security recommendations with icons"""
-    if not recommendations:
-        return
-    
-    st.markdown("### 📋 Security Recommendations")
-    
-    cols = st.columns(2)
-    for i, rec in enumerate(recommendations):
-        with cols[i % 2]:
-            st.markdown(f"""
-            <div style="background: #f8f9fa; padding: 0.7rem; border-radius: 10px; margin: 0.3rem 0;">
-                {rec}
-            </div>
-            """, unsafe_allow_html=True)
+def extract_url_features(url):
+    url = str(url).strip()
+    parsed = urlparse(url)
+    return pd.DataFrame([{
+        'url_length'          : len(url),
+        'domain_length'       : len(parsed.netloc),
+        'path_length'         : len(parsed.path),
+        'num_dots'            : url.count('.'),
+        'num_hyphens'         : url.count('-'),
+        'num_underscores'     : url.count('_'),
+        'num_slashes'         : url.count('/'),
+        'num_at'              : url.count('@'),
+        'num_question'        : url.count('?'),
+        'num_equals'          : url.count('='),
+        'num_digits'          : sum(c.isdigit() for c in url),
+        'num_params'          : len(parsed.query.split('&')) if parsed.query else 0,
+        'has_https'           : 1 if parsed.scheme == 'https' else 0,
+        'has_ip'              : 1 if re.match(r'\d+\.\d+\.\d+\.\d+', parsed.netloc) else 0,
+        'has_suspicious_words': 1 if any(w in url.lower() for w in ['login','verify','bank','secure','account','update','confirm','paypal']) else 0,
+        'subdomain_count'     : len(parsed.netloc.split('.')) - 2 if parsed.netloc else 0,
+        'shortening_service'  : 1 if any(s in url for s in ['bit.ly','tinyurl','t.co','goo.gl']) else 0,
+    }])
 
 
-def dashboard_page():
-    """Dashboard / Home Page"""
-    st.markdown('<div class="glass-header">', unsafe_allow_html=True)
-    st.markdown('<h1 class="animated-title">🛡️ AI Phishing Defender</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="text-align: center; color: #666;">Real-time AI-powered phishing detection for URLs and Emails</p>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+# Sidebar
+with st.sidebar:
+    st.image("https://img.icons8.com/fluency/96/shield.png", width=70)
+    st.title("Phishing Shield")
+    st.caption("v2.0 — Transformer & ML Engine")
 
-    # Quick stats row
-    col1, col2, col3, col4, col5 = st.columns(5)
-
-    with col1:
-        st.markdown("""
-        <div class="metric-card" style="border-left-color: #667eea;">
-            <div class="metric-label">Detection Models</div>
-            <div class="metric-value">2</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        st.markdown("""
-        <div class="metric-card" style="border-left-color: #2ed573;">
-            <div class="metric-label">URL Features</div>
-            <div class="metric-value">40+</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col3:
-        st.markdown("""
-        <div class="metric-card" style="border-left-color: #ffa502;">
-            <div class="metric-label">Email Features</div>
-            <div class="metric-value">20+</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # Load metrics for dashboard display
-    url_acc = 96.68
-    email_acc = 86.71
-    try:
-        with open("models/url_training_metrics.json", "r") as f:
-            url_metrics_dash = json.load(f)
-            url_acc = url_metrics_dash.get("xgboost_url", {}).get("accuracy", 0.9668) * 100
-    except:
-        pass
-    try:
-        with open("models/email_training_metrics.json", "r") as f:
-            email_metrics_dash = json.load(f)
-            email_acc = email_metrics_dash.get("xgboost_email", {}).get("accuracy", 0.8671) * 100
-    except:
-        pass
-
-    with col4:
-        st.markdown(f"""
-        <div class="metric-card" style="border-left-color: #ff4757;">
-            <div class="metric-label">URL Model Accuracy</div>
-            <div class="metric-value" style="color: #ff4757;">{url_acc:.2f}%</div>
-            <div style="font-size:0.75rem; color:#999;">XGBoost</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col5:
-        st.markdown(f"""
-        <div class="metric-card" style="border-left-color: #764ba2;">
-            <div class="metric-label">Email Model Accuracy</div>
-            <div class="metric-value" style="color: #764ba2;">{email_acc:.2f}%</div>
-            <div style="font-size:0.75rem; color:#999;">XGBoost</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.divider()
-
-    # Quick action cards
-    st.markdown("## ⚡ Quick Actions")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("""
-        <div style="background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 15px;
-                    padding: 1.5rem; color: white; text-align: center;">
-            <div style="font-size: 2.5rem;">🔗</div>
-            <h3>URL Scanner</h3>
-            <p style="opacity: 0.9;">Paste any suspicious URL to instantly check for phishing indicators.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("Go to URL Scanner →", key="dash_url", use_container_width=True):
-            st.session_state["nav"] = "🔗 URL Scanner"
-
-    with col2:
-        st.markdown("""
-        <div style="background: linear-gradient(135deg, #2ed573, #00b894); border-radius: 15px;
-                    padding: 1.5rem; color: white; text-align: center;">
-            <div style="font-size: 2.5rem;">📧</div>
-            <h3>Email Scanner</h3>
-            <p style="opacity: 0.9;">Paste email subject and body to detect phishing content.</p>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button("Go to Email Scanner →", key="dash_email", use_container_width=True):
-            st.session_state["nav"] = "📧 Email Scanner"
-
-    st.divider()
-
-    # Session history
-    st.markdown("## 🕘 Recent Scans")
-    if 'detection_history' in st.session_state and st.session_state.detection_history:
-        df = pd.DataFrame(st.session_state.detection_history)
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.info("📭 No scans yet in this session. Use the URL or Email Scanner to get started.")
-
-    st.divider()
-
-    # Threat summary
-    st.markdown("## 🧠 How It Works")
-    st.markdown("""
-    1. **Input** — Paste a URL or email content into the scanner.
-    2. **Feature Extraction** — 40+ structural and linguistic features are extracted automatically.
-    3. **ML Inference** — XGBoost and Random Forest models evaluate the features.
-    4. **Risk Scoring** — A combined risk score (0–100%) is computed.
-    5. **Report** — Risk level, detected indicators, and recommendations are shown instantly.
-    """)
-def analyze_url_page():
-    """URL Analysis Page with Modern UI"""
-    st.markdown('<div class="glass-header">', unsafe_allow_html=True)
-    st.markdown('<h1 class="animated-title">🔗 URL Phishing Detection</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="text-align: center; color: #666;">Analyze URLs in real-time for phishing indicators</p>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        url_input = st.text_input(
-            "Enter URL to analyze:",
-            placeholder="https://example.com/path?query=value",
-            key="url_input",
-            label_visibility="collapsed"
-        )
-    
-    with col2:
-        analyze_clicked = st.button("🚀 Analyze URL", type="primary", use_container_width=True)
-    
-    # Batch analysis
-    with st.expander("📦 Batch URL Analysis (Upload multiple URLs)", expanded=False):
-        batch_urls = st.text_area(
-            "Enter multiple URLs (one per line):",
-            height=150,
-            placeholder="https://url1.com\nhttps://url2.com\nhttps://url3.com",
-            label_visibility="collapsed"
-        )
-        
-        if st.button("📊 Analyze Batch", use_container_width=True):
-            if batch_urls and st.session_state.detector:
-                urls = [u.strip() for u in batch_urls.split('\n') if u.strip()]
-                if urls:
-                    with st.spinner(f"🔍 Analyzing {len(urls)} URLs..."):
-                        progress_bar = st.progress(0)
-                        results = []
-                        for i, url in enumerate(urls):
-                            results.append(st.session_state.detector.analyze_url(url))
-                            progress_bar.progress((i + 1) / len(urls))
-                        progress_bar.empty()
-                        
-                        df_results = pd.DataFrame([
-                            {
-                                'URL': r['url'][:60] + '...' if len(r['url']) > 60 else r['url'],
-                                'Risk Level': r['risk_level'],
-                                'Risk Score': f"{r['risk_score']:.2%}",
-                                'Issues': len(r['risk_factors'])
-                            }
-                            for r in results
-                        ])
-                        
-                        st.dataframe(df_results, use_container_width=True)
-    
-    # Single URL analysis
-    if analyze_clicked and url_input:
-        if not st.session_state.detector:
-            st.error("❌ Models not loaded. Please wait for initialization.")
-            return
-        
-        with st.spinner("🔍 Analyzing URL..."):
-            progress_bar = st.progress(0)
-            for i in range(20):
-                time.sleep(0.01)
-                progress_bar.progress((i + 1) * 5)
-            
-            result = st.session_state.detector.analyze_url(url_input)
-            progress_bar.empty()
-        
-        st.markdown("---")
-        
-        # Metrics row
-        col1, col2, col3, col4 = st.columns(4)
-        
-        risk_color = {
-            "HIGH": "#ff4757",
-            "MEDIUM": "#ffa502",
-            "LOW": "#1e90ff",
-            "SAFE": "#2ed573"
-        }
-        
-        with col1:
-            st.markdown(f"""
-            <div class="metric-card" style="border-left-color: {risk_color.get(result['risk_level'], '#666')}">
-                <div class="metric-label">Risk Level</div>
-                <div class="metric-value" style="color: {risk_color.get(result['risk_level'], '#666')}">
-                    {result['risk_level']}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">Risk Score</div>
-                <div class="metric-value">{result['risk_score']:.2%}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            ml_status = "Phishing" if result.get('ml_prediction') == 1 else "Legitimate" if result.get('ml_prediction') is not None else "N/A"
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">ML Prediction</div>
-                <div class="metric-value">{ml_status}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col4:
-            st.markdown(f"""
-            <div class="metric-card">
-                <div class="metric-label">Risk Factors</div>
-                <div class="metric-value">{len(result['risk_factors'])}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Risk gauge
-        if PLOTLY_AVAILABLE:
-            display_modern_risk_gauge(result['risk_score'])
-        else:
-            st.progress(result['risk_score'])
-            st.write(f"**Risk Score:** {result['risk_score']:.2%}")
-        
-        # Risk factors
-        if result['risk_factors']:
-            display_modern_risk_factors(result['risk_factors'])
-        
-        # Recommendations
-        recommendations = st.session_state.detector.get_recommendations(result)
-        display_modern_recommendations(recommendations)
-        
-        # Detailed analysis expander
-        with st.expander("📊 Detailed Analysis", expanded=False):
-            features = result.get('features', {})
-            if features:
-                feature_df = pd.DataFrame(list(features.items()), columns=['Feature', 'Value'])
-                st.dataframe(feature_df, use_container_width=True)
-    
-    elif analyze_clicked and not url_input:
-        st.warning("⚠️ Please enter a URL to analyze.")
-
-
-def analyze_email_page():
-    """Email Analysis Page with Modern UI"""
-    st.markdown('<div class="glass-header">', unsafe_allow_html=True)
-    st.markdown('<h1 class="animated-title">📧 Email Phishing Detection</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="text-align: center; color: #666;">Paste email content to analyze for phishing indicators</p>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Initialize session state for sample data
-    if 'sample_subject' not in st.session_state:
-        st.session_state.sample_subject = ""
-    if 'sample_body' not in st.session_state:
-        st.session_state.sample_body = ""
-    if 'sample_sender' not in st.session_state:
-        st.session_state.sample_sender = ""
-    
-    # Email input form
-    with st.form("email_form"):
-        sender = st.text_input("📧 Sender Email Address (optional)", 
-                               placeholder="sender@example.com",
-                               value=st.session_state.sample_sender)
-        subject = st.text_input("📝 Email Subject", 
-                                placeholder="Enter email subject...",
-                                value=st.session_state.sample_subject)
-        body = st.text_area("📄 Email Body", 
-                           placeholder="Paste the email body content here...",
-                           height=250,
-                           value=st.session_state.sample_body)
-        
-        submitted = st.form_submit_button("🔍 Analyze Email", type="primary", use_container_width=True)
-    
-    if submitted:
-        if not subject and not body:
-            st.warning("⚠️ Please enter at least a subject or body content.")
-        elif not st.session_state.detector:
-            st.error("❌ Models not loaded. Please wait for initialization.")
-        else:
-            with st.spinner("🔍 Analyzing email content..."):
-                progress_bar = st.progress(0)
-                for i in range(20):
-                    time.sleep(0.01)
-                    progress_bar.progress((i + 1) * 5)
-                
-                result = st.session_state.detector.analyze_email_with_url_extraction(
-                    subject, body, sender
-                )
-                progress_bar.empty()
-            
-            st.markdown("---")
-            
-            # Metrics
-            col1, col2, col3 = st.columns(3)
-            
-            risk_color = {
-                "HIGH": "#ff4757",
-                "MEDIUM": "#ffa502", 
-                "LOW": "#1e90ff",
-                "SAFE": "#2ed573"
-            }
-            
-            with col1:
-                st.markdown(f"""
-                <div class="metric-card" style="border-left-color: {risk_color.get(result['combined_risk_level'], '#666')}">
-                    <div class="metric-label">Combined Risk</div>
-                    <div class="metric-value" style="color: {risk_color.get(result['combined_risk_level'], '#666')}">
-                        {result['combined_risk_level']}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col2:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">Combined Score</div>
-                    <div class="metric-value">{result['combined_risk_score']:.2%}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col3:
-                st.markdown(f"""
-                <div class="metric-card">
-                    <div class="metric-label">URLs Found</div>
-                    <div class="metric-value">{len(result['urls_found'])}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Risk gauge
-            if PLOTLY_AVAILABLE:
-                display_modern_risk_gauge(result['combined_risk_score'])
-            else:
-                st.progress(result['combined_risk_score'])
-                st.write(f"**Risk Score:** {result['combined_risk_score']:.2%}")
-            
-            # Email analysis details
-            with st.expander("📧 Email Analysis Details", expanded=True):
-                email_analysis = result['email_analysis']
-                st.markdown(f"**Subject:** {email_analysis.get('subject', 'N/A')}")
-                st.markdown(f"**Sender:** {email_analysis.get('sender', 'N/A')}")
-                
-                if email_analysis.get('risk_factors'):
-                    st.markdown("**Risk Factors:**")
-                    for factor in email_analysis['risk_factors']:
-                        st.markdown(f"- {factor}")
-            
-            # URL analysis details
-            if result['url_analyses']:
-                with st.expander("🔗 Embedded URL Analysis", expanded=False):
-                    for url_result in result['url_analyses']:
-                        st.markdown(f"**URL:** `{url_result['url']}`")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.metric("Risk Level", url_result['risk_level'])
-                        with col2:
-                            st.metric("Score", f"{url_result['risk_score']:.2%}")
-                        if url_result['risk_factors']:
-                            st.markdown("**Risk Factors:**")
-                            for factor in url_result['risk_factors'][:3]:
-                                st.markdown(f"- {factor}")
-                        st.divider()
-            
-            # Recommendations
-            display_modern_recommendations(result['recommendations'])
-            
-            # Clear sample data
-            st.session_state.sample_subject = ""
-            st.session_state.sample_body = ""
-            st.session_state.sample_sender = ""
-    
-    # Sample emails section
-    with st.expander("📝 Try Sample Emails", expanded=False):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("### 🔴 Phishing Example")
-            if st.button("📧 Load Phishing Sample", key="load_phishing", use_container_width=True):
-                st.session_state.sample_subject = "URGENT: Your account has been suspended - Verify now!"
-                st.session_state.sample_body = "Dear customer, your account has been compromised. Click here immediately to verify your identity: http://suspicious-site.xyz/verify. Failure to act within 24 hours will result in permanent account termination."
-                st.session_state.sample_sender = "security-team123@gmail.com"
-                st.rerun()
-        
-        with col2:
-            st.markdown("### 🟢 Legitimate Example")
-            if st.button("📧 Load Legitimate Sample", key="load_legitimate", use_container_width=True):
-                st.session_state.sample_subject = "Weekly team meeting agenda"
-                st.session_state.sample_body = "Hi team, just a reminder that we have our weekly standup at 10 AM tomorrow. Please come prepared with your updates on the current sprint."
-                st.session_state.sample_sender = "john.smith@company.com"
-                st.rerun()
-
-
-def about_page():
-    """About/Information Page with Detection Explanation and Model Details"""
-    
-    st.markdown('<div class="glass-header">', unsafe_allow_html=True)
-    st.markdown('<h1 class="animated-title">🛡️ About the System</h1>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # ========== SYSTEM OVERVIEW ==========
-    st.markdown("""
-    ## 🚀 AI-Powered Phishing Detection System
-    
-    This system uses **advanced Machine Learning** and **Natural Language Processing** 
-    to detect phishing attempts in URLs and emails with high accuracy.
-    """)
-    
-    # ========== TWO COLUMN LAYOUT FOR DETECTION METHODS ==========
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        ### 🔗 URL Detection
-        
-        Our system analyzes URLs using **40+ structural features**:
-        
-        | Feature Category | What We Check |
-        |-----------------|---------------|
-        | **Length & Structure** | URL length, dots, slashes, hyphens |
-        | **Security** | HTTPS presence, port numbers |
-        | **Domain** | Suspicious TLDs (.xyz, .tk, .ml), IP addresses |
-        | **Content** | Brand keywords, suspicious words |
-        | **Complexity** | URL entropy, encoding, redirects |
-        | **Patterns** | Typosquatting, homograph attacks |
-        
-        **Examples detected:**
-        - `http://paypal-verify.xyz/login` → Brand impersonation
-        - `http://192.168.1.1/verify` → IP address instead of domain
-        - `https://secure-login.account-verify.com` → Suspicious subdomains
-        """)
-    
-    with col2:
-        st.markdown("""
-        ### 📧 Email Detection
-        
-        Our system analyzes emails using **comprehensive text analysis**:
-        
-        | Feature Category | What We Check |
-        |-----------------|---------------|
-        | **Linguistic** | Urgency words, threats, suspicious phrases |
-        | **Structural** | HTML ratio, attachments, embedded links |
-        | **Sender** | Domain reputation, SPF/DKIM/DMARC |
-        | **Content** | Brand names, sensitive keywords |
-        | **URLs** | Embedded URL extraction and analysis |
-        
-        **Examples detected:**
-        - "URGENT: Your account will be suspended" → Urgency tactics
-        - "Click here to verify" → Suspicious actions
-        - security@gmail.com claiming to be your bank → Sender mismatch
-        """)
-    
-    st.divider()
-    
-    # ========== RISK LEVELS EXPLANATION ==========
-    st.markdown("## 📊 Risk Levels Explained")
-    
-    risk_col1, risk_col2, risk_col3, risk_col4 = st.columns(4)
-    
-    with risk_col1:
-        st.markdown("""
-        <div style="background: #ffebee; border-radius: 15px; padding: 1rem; text-align: center; border-left: 5px solid #ff4757;">
-            <div style="font-size: 2rem;">🔴</div>
-            <div style="font-weight: bold; color: #ff4757;">HIGH RISK</div>
-            <div style="font-size: 0.85rem; margin-top: 0.5rem;">Score ≥ 70%</div>
-            <hr style="margin: 0.5rem 0;">
-            <div style="font-size: 0.8rem; text-align: left;">
-            • Strong phishing indicators<br>
-            • Multiple red flags detected<br>
-            • DO NOT proceed<br>
-            • Block immediately
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with risk_col2:
-        st.markdown("""
-        <div style="background: #fff3e0; border-radius: 15px; padding: 1rem; text-align: center; border-left: 5px solid #ffa502;">
-            <div style="font-size: 2rem;">🟠</div>
-            <div style="font-weight: bold; color: #ffa502;">MEDIUM RISK</div>
-            <div style="font-size: 0.85rem; margin-top: 0.5rem;">Score 45-69%</div>
-            <hr style="margin: 0.5rem 0;">
-            <div style="font-size: 0.8rem; text-align: left;">
-            • Suspicious indicators present<br>
-            • Exercise caution<br>
-            • Verify through official channels<br>
-            • Don't click links
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with risk_col3:
-        st.markdown("""
-        <div style="background: #e3f2fd; border-radius: 15px; padding: 1rem; text-align: center; border-left: 5px solid #1e90ff;">
-            <div style="font-size: 2rem;">🟡</div>
-            <div style="font-weight: bold; color: #1e90ff;">LOW RISK</div>
-            <div style="font-size: 0.85rem; margin-top: 0.5rem;">Score 20-44%</div>
-            <hr style="margin: 0.5rem 0;">
-            <div style="font-size: 0.8rem; text-align: left;">
-            • Minor concerns detected<br>
-            • Likely safe but verify<br>
-            • Check sender carefully<br>
-            • Be cautious with links
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with risk_col4:
-        st.markdown("""
-        <div style="background: #e8f5e9; border-radius: 15px; padding: 1rem; text-align: center; border-left: 5px solid #2ed573;">
-            <div style="font-size: 2rem;">🟢</div>
-            <div style="font-weight: bold; color: #2ed573;">SAFE</div>
-            <div style="font-size: 0.85rem; margin-top: 0.5rem;">Score &lt; 20%</div>
-            <hr style="margin: 0.5rem 0;">
-            <div style="font-size: 0.8rem; text-align: left;">
-            • No significant risk detected<br>
-            • Proceed normally<br>
-            • Still practice caution<br>
-            • Verify unexpected requests
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.divider()
-    
-    # ========== MODEL ARCHITECTURE ==========
-    st.markdown("## 🤖 Machine Learning Models")
-    
-    st.markdown("""
-    Our system uses an **ensemble approach** combining multiple models for robust detection:
-    """)
-    
-    model_col1, model_col2, model_col3 = st.columns(3)
-    
-    with model_col1:
-        st.markdown("""
-        <div style="background: #f8f9fa; border-radius: 12px; padding: 1rem; margin: 0.5rem 0;">
-            <div style="font-size: 1.5rem; text-align: center;">📊</div>
-            <div style="font-weight: bold; text-align: center;">XGBoost</div>
-            <div style="font-size: 0.8rem; margin-top: 0.5rem;">
-            • Gradient boosting algorithm<br>
-            • Best for structured features<br>
-            • High accuracy (94.7%)<br>
-            • Fast inference
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with model_col2:
-        st.markdown("""
-        <div style="background: #f8f9fa; border-radius: 12px; padding: 1rem; margin: 0.5rem 0;">
-            <div style="font-size: 1.5rem; text-align: center;">🌲</div>
-            <div style="font-weight: bold; text-align: center;">Random Forest</div>
-            <div style="font-size: 0.8rem; margin-top: 0.5rem;">
-            • Ensemble of decision trees<br>
-            • Handles outliers well<br>
-            • Robust predictions (92.6%)<br>
-            • No overfitting
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with model_col3:
-        st.markdown("""
-        <div style="background: #f8f9fa; border-radius: 12px; padding: 1rem; margin: 0.5rem 0;">
-            <div style="font-size: 1.5rem; text-align: center;">🧠</div>
-            <div style="font-weight: bold; text-align: center;">Feature Engineering</div>
-            <div style="font-size: 0.8rem; margin-top: 0.5rem;">
-            • 40+ URL features<br>
-            • 20+ email features<br>
-            • TF-IDF text vectors<br>
-            • Domain-aware splitting
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.divider()
-    
-    # ========== REAL MODEL METRICS ==========
-    st.markdown("## 📈 Model Performance Metrics")
-    st.markdown("*These metrics are from domain-aware splitting with **no data leakage***")
-    
-    # Load real metrics from JSON files
-    url_metrics = {}
-    email_metrics = {}
-    
-    try:
-        with open("models/url_training_metrics.json", "r") as f:
-            url_metrics = json.load(f)
-    except:
-        # Fallback to default values if file not found
-        url_metrics = {
-            "xgboost_url": {"accuracy": 0.9668, "precision": 0.9838, "recall": 0.9179, "f1": 0.9498},
-            "random_forest_url": {"accuracy": 0.9595, "precision": 0.9745, "recall": 0.9055, "f1": 0.9387}
-        }
-    
-    try:
-        with open("models/email_training_metrics.json", "r") as f:
-            email_metrics = json.load(f)
-    except:
-        # Fallback to default values if file not found
-        email_metrics = {
-            "xgboost_email": {"accuracy": 0.8671, "precision": 0.8795, "recall": 0.8905, "f1": 0.8849},
-            "random_forest_email": {"accuracy": 0.8600, "precision": 0.8718, "recall": 0.8863, "f1": 0.8790}
-        }
-    
-    # URL model
-    st.markdown("### 🔗 URL Detection Models")
-    url_data = [
-        ("XGBoost",       url_metrics["xgboost_url"]["accuracy"], url_metrics["xgboost_url"]["precision"], 
-                      url_metrics["xgboost_url"]["recall"], url_metrics["xgboost_url"]["f1"]),
-        ("Random Forest", url_metrics["random_forest_url"]["accuracy"], url_metrics["random_forest_url"]["precision"], 
-                      url_metrics["random_forest_url"]["recall"], url_metrics["random_forest_url"]["f1"]),
-    ]
-    for name, acc, prec, rec, f1 in url_data:
-        st.markdown(f"**{name}**")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Accuracy",  f"{acc  * 100:.2f}%")
-        c2.metric("Precision", f"{prec * 100:.2f}%")
-        c3.metric("Recall",    f"{rec  * 100:.2f}%")
-        c4.metric("F1 Score",  f"{f1   * 100:.2f}%")
-        st.progress(acc, text=f"{name} Accuracy")
-
-    # Email model
-    st.markdown("### 📧 Email Detection Models")
-    email_data = [
-        ("XGBoost",       email_metrics["xgboost_email"]["accuracy"], email_metrics["xgboost_email"]["precision"], 
-                       email_metrics["xgboost_email"]["recall"], email_metrics["xgboost_email"]["f1"]),
-        ("Random Forest", email_metrics["random_forest_email"]["accuracy"], email_metrics["random_forest_email"]["precision"], 
-                       email_metrics["random_forest_email"]["recall"], email_metrics["random_forest_email"]["f1"]),
-    ]
-    for name, acc, prec, rec, f1 in email_data:
-        st.markdown(f"**{name}**")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Accuracy",  f"{acc  * 100:.2f}%")
-        c2.metric("Precision", f"{prec * 100:.2f}%")
-        c3.metric("Recall",    f"{rec  * 100:.2f}%")
-        c4.metric("F1 Score",  f"{f1   * 100:.2f}%")
-        st.progress(acc, text=f"{name} Accuracy")
-
-    st.divider()
-    # ========== DETECTION EXAMPLES ==========
-    st.markdown("## 🔍 What Gets Detected")
-    
-    example_col1, example_col2 = st.columns(2)
-    
-    with example_col1:
-        st.markdown("""
-        ### 🚨 Phishing Indicators
-        
-        **URL Red Flags:**
-        - ✅ Suspicious TLDs: `.xyz`, `.tk`, `.ml`, `.ga`
-        - ✅ IP addresses instead of domain names
-        - ✅ URL shorteners: `bit.ly`, `tinyurl.com`
-        - ✅ Brand typos: `paypa1.com`, `amaz0n.com`
-        - ✅ Excessive subdomains: `login.secure.verify.bank.com`
-        
-        **Email Red Flags:**
-        - ✅ Urgency words: "immediately", "urgent", "ASAP"
-        - ✅ Threats: "suspended", "terminated", "locked"
-        - ✅ Suspicious sender domains
-        - ✅ Embedded suspicious URLs
-        - ✅ Poor grammar and spelling
-        """)
-    
-    with example_col2:
-        st.markdown("""
-        ### ✅ Legitimate Indicators
-        
-        **URL Green Flags:**
-        - ✅ Well-known domains: `.com`, `.org`, `.gov`
-        - ✅ HTTPS encryption
-        - ✅ Short, clean URL structure
-        - ✅ Established brand domains
-        - ✅ No suspicious characters
-        
-        **Email Green Flags:**
-        - ✅ Professional signature
-        - ✅ Expected sender domain
-        - ✅ Proper grammar
-        - ✅ No urgency pressure
-        - ✅ Relevant content
-        """)
-    
-    st.divider()
-    
-    # ========== SECURITY BEST PRACTICES ==========
-    st.markdown("## 🔒 Security Best Practices")
-    
-    st.markdown("""
-    <div style="background: #f0f8ff; border-radius: 15px; padding: 1.5rem;">
-        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
-            <div>
-                <span style="font-size: 1.2rem;">✅</span> Always verify unexpected requests through official channels<br><br>
-                <span style="font-size: 1.2rem;">✅</span> Never share passwords or sensitive information via email<br><br>
-                <span style="font-size: 1.2rem;">✅</span> Check sender email addresses carefully<br><br>
-                <span style="font-size: 1.2rem;">✅</span> Hover over links before clicking to verify URLs
-            </div>
-            <div>
-                <span style="font-size: 1.2rem;">✅</span> Use multi-factor authentication where available<br><br>
-                <span style="font-size: 1.2rem;">✅</span> Keep software and browsers updated<br><br>
-                <span style="font-size: 1.2rem;">✅</span> Report suspicious emails to your IT/security team<br><br>
-                <span style="font-size: 1.2rem;">✅</span> Trust your instincts - if it seems suspicious, it probably is
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.divider()
-    
-    # ========== TECHNICAL DETAILS ==========
-    with st.expander("🔬 Technical Details & Methodology", expanded=False):
-        st.markdown("""
-        ### Feature Engineering Details
-        
-        **URL Features (40+):**
-        - Structural: length, dots, hyphens, slashes, question marks
-        - Security: HTTPS, port presence, authentication
-        - Domain: TLD analysis, subdomain count, IP detection
-        - Content: brand keywords, suspicious terms, URL shorteners
-        - Complexity: entropy, encoding count, homograph score
-        
-        **Email Features (20+):**
-        - Text statistics: length, caps count, digit count
-        - Linguistics: urgency score, threat score, suspicious words
-        - Metadata: sender reputation, SPF/DKIM/DMARC
-        - HTML analysis: ratio, link count, form detection
-        
-        ### Training Methodology
-        
-        - **Domain-aware splitting**: Same domains never appear in train/test
-        - **No data leakage**: Label columns excluded from features
-        - **Stratified sampling**: Maintains class distribution
-        - **Cross-validation**: 5-fold validation for robustness
-        
-        ### Model Optimization
-        
-        - **Hyperparameter tuning**: Grid search for optimal parameters
-        - **Class balancing**: Handles imbalanced datasets
-        - **Feature selection**: Removes correlated features
-        - **Ensemble voting**: Weighted average of multiple models
-        """)
-    
     st.markdown("---")
-    st.caption("🛡️ AI Phishing Defender v2.0 | Powered by Machine Learning & Natural Language Processing")
-    st.caption("📧 For support or inquiries, contact your security team")
+    st.markdown("### 🧠 Active Architectures")
+    st.markdown("""
+    - **BERT Transformer (Deep Learning)**
+      - Bidirectional Self-Attention
+      - 98.6% Accuracy, 100% Recall
+    - **Random Forest (Classic ML)**
+      - 100 Trees + TF-IDF (5007 features)
+      - 96.4% Accuracy
+    """)
+
+    st.markdown("---")
+    st.info("💡 **Tip**: Traditional models can be fooled by synonym replacement and urgency without obvious keywords. BERT inspects the entire syntactic context.")
 
 
-def statistics_page():
-    """Statistics Page with REAL metrics"""
-    st.markdown('<div class="glass-header">', unsafe_allow_html=True)
-    st.markdown('<h1 class="animated-title">📊 Model Performance</h1>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+# Header
+st.markdown('<div class="main-title">🛡️ AI-Powered Phishing Detection System</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-title">Intelligent cyber threat detection using <b>BERT Transformers</b> and Machine Learning.</div>', unsafe_allow_html=True)
 
-    # ── Hardcoded real metrics ──────────────────────────────────────────
-    REAL_METRICS = {
-        "xgboost_url": {
-            "label": "XGBoost",
-            "accuracy":  0.9668,
-            "precision": 0.9838,
-            "recall":    0.9179,
-            "f1":        0.9498,
-        },
-        "random_forest_url": {
-            "label": "Random Forest",
-            "accuracy":  0.9595,
-            "precision": 0.9745,
-            "recall":    0.9055,
-            "f1":        0.9387,
-        },
-    }
-    EMAIL_METRICS = {
-        "xgboost_email": {
-            "label": "XGBoost",
-            "accuracy":  0.8671,
-            "precision": 0.8795,
-            "recall":    0.8905,
-            "f1":        0.8849,
-        },
-        "random_forest_email": {
-            "label": "Random Forest",
-            "accuracy":  0.8600,
-            "precision": 0.8718,
-            "recall":    0.8863,
-            "f1":        0.8790,
-        },
-    }
-    # ───────────────────────────────────────────────────────────────────
+# Main Navigation Tabs
+tab_email, tab_compare, tab_url, tab_metrics = st.tabs([
+    "📧 Email Threat Detector",
+    "⚖️ Side-by-Side Model Comparison",
+    "🔗 URL Threat Detector",
+    "📊 Benchmarks & Architecture"
+])
 
-    def render_model_metrics(metrics_dict, section_title):
-        st.markdown(f"### {section_title}")
-        for key, m in metrics_dict.items():
-            st.markdown(f"#### 🤖 {m['label']}")
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Accuracy",  f"{m['accuracy']  * 100:.2f}%")
-            col2.metric("Precision", f"{m['precision'] * 100:.2f}%")
-            col3.metric("Recall",    f"{m['recall']    * 100:.2f}%")
-            col4.metric("F1 Score",  f"{m['f1']        * 100:.2f}%")
+# ----------------- TAB 1: EMAIL DETECTION -----------------
+with tab_email:
+    col_input, col_meta = st.columns([2, 1])
 
-            # Visual bar
-            st.progress(m['accuracy'], text=f"{m['label']} Accuracy")
+    with col_input:
+        st.subheader("Analyze Email Content")
 
-            st.info(f"""
-            📊 **What these numbers mean:**
-            - **{m['accuracy']*100:.1f}% Accuracy** — Correct on {m['accuracy']*100:.1f} out of every 100 predictions
-            - **{m['precision']*100:.1f}% Precision** — When it flags PHISHING, it's right {m['precision']*100:.1f}% of the time
-            - **{m['recall']*100:.1f}% Recall** — Catches {m['recall']*100:.1f}% of all actual phishing attempts
-            - **{m['f1']*100:.1f}% F1 Score** — Strong balance between precision and recall
-            """)
-            st.divider()
+        # Sample quick loaders
+        st.markdown("**Quick Test Samples:**")
+        s1, s2, s3 = st.columns(3)
+        sample_text = ""
 
-    # ── URL models ──────────────────────────────────────────────────────
-    render_model_metrics(REAL_METRICS,  "🔗 URL Detection Models")
+        if s1.button("🚨 Bank Phishing"):
+            st.session_state['email_input'] = (
+                "URGENT SECURITY ALERT: Your online banking account has been temporarily locked "
+                "due to multiple suspicious failed login attempts. You must confirm your credentials "
+                "within 24 hours at http://192.168.1.100/verify-account or your account will be permanently closed."
+            )
+        if s2.button("⚠️ Cloud Service Spoof"):
+            st.session_state['email_input'] = (
+                "Important notice: Your Microsoft 365 cloud backup sync encountered a timeout. "
+                "Please review your admin portal credentials to resume your corporate mailbox service."
+            )
+        if s3.button("✅ Safe Work Email"):
+            st.session_state['email_input'] = (
+                "Hi Sarah, attached is the revised agenda for tomorrow's sprint retrospective. "
+                "Please take a look at the slide deck before 2 PM. Let me know if you'd like to add any discussion points."
+            )
 
-    # ── Email models ─────────────────────────────────────────────────────
-    render_model_metrics(EMAIL_METRICS, "📧 Email Detection Models")
-
-    # ── Side-by-side comparison chart ────────────────────────────────────
-    if PLOTLY_AVAILABLE:
-        st.markdown("### 📊 Model Comparison")
-
-        all_models = {**REAL_METRICS, **EMAIL_METRICS}
-        model_names  = [v["label"] + (" (URL)" if "url" in k else " (Email)") for k, v in all_models.items()]
-        accuracies   = [v["accuracy"]  * 100 for v in all_models.values()]
-        precisions   = [v["precision"] * 100 for v in all_models.values()]
-        recalls      = [v["recall"]    * 100 for v in all_models.values()]
-        f1_scores    = [v["f1"]        * 100 for v in all_models.values()]
-
-        fig = go.Figure(data=[
-            go.Bar(name="Accuracy",  x=model_names, y=accuracies,  marker_color="#667eea"),
-            go.Bar(name="Precision", x=model_names, y=precisions,  marker_color="#2ed573"),
-            go.Bar(name="Recall",    x=model_names, y=recalls,     marker_color="#ffa502"),
-            go.Bar(name="F1 Score",  x=model_names, y=f1_scores,   marker_color="#ff4757"),
-        ])
-        fig.update_layout(
-            barmode="group",
-            yaxis=dict(title="Score (%)", range=[80, 100]),
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            legend=dict(orientation="h", y=1.1),
-            margin=dict(t=40, b=20),
+        email_text = st.text_area(
+            "Paste full email body or subject line:",
+            value=st.session_state.get('email_input', ''),
+            height=200,
+            placeholder="Dear customer, your account requires immediate verification..."
         )
-        st.plotly_chart(fig, use_container_width=True)
 
-
-def main():
-    """Main application with modern sidebar"""
-    
-    # Sidebar with modern styling
-    with st.sidebar:
-        st.markdown("""
-        <div style="text-align: center; padding: 1rem 0;">
-            <div style="font-size: 3rem;">🛡️</div>
-            <h2 style="color: white;">AI Phishing<br>Defender</h2>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.divider()
-        
-        # Navigation
-        page = st.radio(
-            "Navigation",
-            ["🏠 Dashboard", "🔗 URL Scanner", "📧 Email Scanner", "📊 Analytics", "ℹ️ About"],
-            label_visibility="collapsed"
+        model_choice = st.radio(
+            "Select Detection Engine:",
+            ["🤖 BERT Transformer (Deep Learning - Recommended: 98.6% Accuracy)",
+             "🌲 Random Forest (Classic TF-IDF Baseline - 96.4% Accuracy)"],
+            index=0
         )
-        
-        st.divider()
-        
-        # System status
-        st.markdown("### System Status")
-        try:
-            detector = initialize_detector()
-            if detector.models_loaded:
-                st.success("✅ AI Models Active")
-                st.info(f"📁 Model Version: v2.0")
+
+        analyze_btn = st.button("🔍 Run Email Analysis", type="primary", use_container_width=True)
+
+    with col_meta:
+        st.subheader("Model Information")
+        if "BERT" in model_choice:
+            st.markdown("""
+            <div class="metric-card">
+                <h4>🤖 BERT Transformer</h4>
+                <p><b>Type:</b> Pretrained / Fine-tuned Transformer</p>
+                <p><b>Strengths:</b> Deep bidirectional context, detects subtle social engineering, handles evasive paraphrasing.</p>
+                <p><b>Test Accuracy:</b> <b style="color:#22C55E;">98.60%</b></p>
+                <p><b>Phishing Recall:</b> <b style="color:#22C55E;">100.00%</b></p>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class="metric-card">
+                <h4>🌲 Random Forest</h4>
+                <p><b>Type:</b> 100 Decision Trees Ensemble</p>
+                <p><b>Features:</b> 5,000 TF-IDF N-grams + 7 Meta features</p>
+                <p><b>Test Accuracy:</b> 96.43%</p>
+                <p><b>Phishing Recall:</b> 97.06%</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Analysis Results Section
+    if analyze_btn:
+        if not email_text.strip():
+            st.warning("⚠️ Please paste an email text to analyze.")
+        else:
+            with st.spinner("Analyzing semantics with selected model..."):
+                if "BERT" in model_choice:
+                    bert = load_bert_model()
+                    res = bert.predict(email_text)
+
+                    st.markdown("---")
+                    st.subheader("Analysis Verdict")
+
+                    if res['is_phishing']:
+                        st.markdown(f"""
+                        <div class="alert-phish">
+                            🚨 <b>THREAT DETECTED: {res['risk_level']}</b><br>
+                            This email exhibits high-confidence characteristics of a malicious phishing attack.
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div class="alert-safe">
+                            ✅ <b>VERDICT: {res['risk_level']}</b><br>
+                            This email appears legitimate based on natural language analysis.
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Phishing Probability", f"{res['phishing_prob']:.2%}")
+                    m2.metric("Legitimate Probability", f"{res['legit_prob']:.2%}")
+                    m3.metric("Model Confidence", f"{res['confidence']:.2%}")
+
+                    st.progress(res['phishing_prob'], text=f"Phishing Risk Score: {res['phishing_prob']*100:.1f} / 100")
+
+                    if res['cues']:
+                        st.markdown("#### 🚩 Key Detected Phishing Signals:")
+                        for cue in res['cues']:
+                            st.write(f"- ⚠️ {cue}")
+                else:
+                    rf_email, _, tfidf = load_baseline_models()
+                    if rf_email is None or tfidf is None:
+                        st.error("Baseline model files not found in models/.")
+                    else:
+                        feat = extract_email_features_rf(email_text, tfidf)
+                        pred = rf_email.predict(feat)[0]
+                        probs = rf_email.predict_proba(feat)[0]
+                        phish_prob = float(probs[1])
+
+                        st.markdown("---")
+                        st.subheader("Analysis Verdict (Random Forest)")
+                        if pred == 1:
+                            st.markdown(f"""
+                            <div class="alert-phish">
+                                🚨 <b>THREAT DETECTED: PHISHING EMAIL</b><br>
+                                Random Forest classified this text as Phishing with {phish_prob:.1%} confidence.
+                            </div>
+                            """, unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"""
+                            <div class="alert-safe">
+                                ✅ <b>VERDICT: LEGITIMATE EMAIL</b><br>
+                                Random Forest classified this text as Legitimate with {(1-phish_prob):.1%} confidence.
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        m1, m2 = st.columns(2)
+                        m1.metric("Phishing Probability", f"{phish_prob:.2%}")
+                        m2.metric("Legitimate Probability", f"{(1-phish_prob):.2%}")
+                        st.progress(phish_prob, text=f"Phishing Risk Score: {phish_prob*100:.1f} / 100")
+
+
+# ----------------- TAB 2: SIDE-BY-SIDE COMPARISON -----------------
+with tab_compare:
+    st.subheader("🔬 Live Dual Model Comparison (BERT vs Random Forest)")
+    st.write("Input an email to see both architectures evaluate the text simultaneously and observe how BERT handles subtle phrasing.")
+
+    comp_text = st.text_area(
+        "Email text for side-by-side benchmark:",
+        value="Dear team member, your password will expire in 6 hours due to periodic IT policy. Update it immediately to prevent suspension.",
+        height=140
+    )
+
+    if st.button("⚡ Compare Models Side-by-Side", type="primary"):
+        c1, c2 = st.columns(2)
+
+        bert = load_bert_model()
+        bert_res = bert.predict(comp_text)
+
+        rf_email, _, tfidf = load_baseline_models()
+        rf_feat = extract_email_features_rf(comp_text, tfidf)
+        rf_pred = rf_email.predict(rf_feat)[0]
+        rf_prob = float(rf_email.predict_proba(rf_feat)[0][1])
+
+        with c1:
+            st.markdown("### 🤖 BERT Transformer (Deep Learning)")
+            if bert_res['is_phishing']:
+                st.error(f"🚨 {bert_res['prediction']} ({bert_res['risk_level']})")
             else:
-                st.warning("⚠️ Models Loading...")
-        except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
-        
-        st.divider()
-        
-        # Session stats
-        if 'detection_history' in st.session_state:
-            st.markdown("### Session Stats")
-            st.metric("Total Scans", len(st.session_state.detection_history))
-        
-        st.markdown("---")
-        st.caption("🛡️ AI Phishing Defender v2.0")
-        st.caption("Powered by AI & Machine Learning")
-    if page == "🏠 Dashboard":
-        dashboard_page()
-    elif page == "🔗 URL Scanner":
-        analyze_url_page()
-    elif page == "📧 Email Scanner":
-        analyze_email_page()
+                st.success(f"✅ {bert_res['prediction']} ({bert_res['risk_level']})")
+            st.metric("Phishing Probability", f"{bert_res['phishing_prob']:.2%}")
+            st.progress(bert_res['phishing_prob'])
+            st.write("**Key Advantage:** Evaluates semantic urgency and intent across full sentences.")
 
-    elif page == "📊 Analytics":
-        statistics_page()
+        with c2:
+            st.markdown("### 🌲 Random Forest (TF-IDF Baseline)")
+            if rf_pred == 1:
+                st.error("🚨 PHISHING DETECTED")
+            else:
+                st.success("✅ LEGITIMATE EMAIL")
+            st.metric("Phishing Probability", f"{rf_prob:.2%}")
+            st.progress(rf_prob)
+            st.write("**Limitation:** Relies strictly on isolated word frequencies and exact token matches.")
 
-    elif page == "ℹ️ About":
-        about_page()
 
-if __name__ == "__main__":
-    main()
+# ----------------- TAB 3: URL THREAT DETECTOR -----------------
+with tab_url:
+    st.subheader("🔗 URL Phishing Analyzer")
+    st.write("Detect malicious, deceptive, and spoofed website links using lexical & structural feature extraction.")
+
+    url_samples = st.columns(3)
+    if url_samples[0].button("⚠️ IP Phishing Link"):
+        st.session_state['url_input'] = "http://192.168.1.1/paypal/login.php?cmd=_login"
+    if url_samples[1].button("⚠️ Typosquat Link"):
+        st.session_state['url_input'] = "http://www.micros0ft-security-update-portal.com/login"
+    if url_samples[2].button("✅ Safe Website"):
+        st.session_state['url_input'] = "https://www.google.com/search?q=cybersecurity"
+
+    url_input = st.text_input("Enter URL to analyze:", value=st.session_state.get('url_input', ''), placeholder="https://example.com/login")
+
+    if st.button("🔍 Analyze URL", type="primary"):
+        if not url_input.strip():
+            st.warning("Please enter a URL first.")
+        else:
+            _, rf_url, _ = load_baseline_models()
+            if rf_url is None:
+                st.error("URL Random Forest model not found.")
+            else:
+                url_features = extract_url_features(url_input)
+                pred = rf_url.predict(url_features)[0]
+                probs = rf_url.predict_proba(url_features)[0]
+                phish_prob = float(probs[1])
+
+                st.markdown("---")
+                if pred == 1:
+                    st.markdown(f"""
+                    <div class="alert-phish">
+                        🚨 <b>MALICIOUS URL DETECTED!</b><br>
+                        Confidence: <b>{phish_prob:.1%}</b>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div class="alert-safe">
+                        ✅ <b>URL APPEARS SAFE!</b><br>
+                        Confidence: <b>{(1-phish_prob):.1%}</b>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.write("#### Extracted URL Structural Attributes:")
+                st.dataframe(url_features.T.rename(columns={0: "Feature Value"}))
+
+
+# ----------------- TAB 4: BENCHMARKS & ARCHITECTURE -----------------
+with tab_metrics:
+    st.subheader("📊 Performance Benchmarks & Architecture Breakdown")
+
+    # Load results CSV if available
+    results_path = 'models/model_comparison_results.csv'
+    if os.path.exists(results_path):
+        bench_df = pd.read_csv(results_path)
+        st.write("### Model Evaluation Summary (Test Dataset)")
+        st.dataframe(bench_df.style.highlight_max(subset=['Accuracy', 'Recall', 'F1-Score', 'ROC-AUC'], color='#D1FAE5'))
+
+    chart_path = 'models/accuracy_comparison_chart.png'
+    if os.path.exists(chart_path):
+        st.image(chart_path, caption="Comparative Metrics: BERT vs Traditional Baselines", use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("💡 Why BERT Achieves Superior Accuracy Over TF-IDF")
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown("""
+        #### ❌ Limitations of TF-IDF + Classic ML:
+        1. **Bag-of-Words Fallacy:** Treats words as unordered bags, missing context.
+        2. **Easily Evaded:** Attackers bypass TF-IDF by replacing trigger words with synonyms (e.g., swapping *"verify password"* for *"confirm credentials"*).
+        3. **No Tone or Intent Understanding:** Fails to differentiate between actual business urgency vs predatory social engineering pressure.
+        """)
+
+    with col_b:
+        st.markdown("""
+        ####  How BERT Solves It:
+        1. **Bidirectional Self-Attention:** Evaluates relationships between every word and every other word in the text simultaneously.
+        2. **Subword WordPiece Tokenization:** Resilient against obfuscation, typosquatting, and leetspeak.
+        3. **Semantic Intent Comprehension:** Understands coercive phishing context even when entirely novel vocabulary is used.
+        """)
